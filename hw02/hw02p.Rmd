@@ -1,0 +1,370 @@
+---
+title: "HW02p"
+author: "Launy schweiger"
+date: "March 6, 2018"
+output: pdf_document
+---
+
+Welcome to HW02p where the "p" stands for "practice" meaning you will use R to solve practical problems. This homework is due 11:59 PM Tuesday 3/6/18. 
+
+You should have RStudio installed to edit this file. You will write code in places marked "TO-DO" to complete the problems. Some of this will be a pure programming assignment. Sometimes you will have to also write English.
+
+The tools for the solutions to these problems can be found in the class practice lectures. I want you to use the methods I taught you, not for you to google and come up with whatever works. You won't learn that way.
+
+To "hand in" the homework, you should compile or publish this file into a PDF that includes output of your code. To do so, use the knit menu in RStudio. You will need LaTeX installed on your computer. See the email announcement I sent out about this. Once it's done, push the PDF file to your github class repository by the deadline. You can choose to make this respository private.
+
+For this homework, you will need the `testthat` libray.
+
+```{r}
+pacman::p_load(testthat)
+```
+
+
+1. Source the simple dataset from lecture 6p:
+
+```{r}
+Xy_simple = data.frame(
+ response = factor(c(0, 0, 0, 1, 1, 1)), #nominal
+ first_feature = c(1, 1, 2, 3, 3, 4),    #continuous
+ second_feature = c(1, 2, 1, 3, 4, 3)    #continuous
+)
+X_simple_feature_matrix = as.matrix(Xy_simple[, 2 : 3])
+y_binary = as.numeric(Xy_simple$response == 1)
+```
+
+
+Try your best to write a general perceptron learning algorithm to the following `Roxygen` spec. For inspiration, see the one I wrote in lecture 6.
+
+```{r}
+#' This function implements the "perceptron learning algorithm" of Frank Rosenblatt (1957).
+#'
+#' @param Xinput      The training data features as an n x (p + 1) matrix where the first column is all 1's.
+#' @param y_binary    The training data responses as a vector of length n consisting of only 0's and 1's.
+#' @param MAX_ITER    The maximum number of iterations the perceptron algorithm performs. Defaults to 1000.
+#' @param w           A vector of length p + 1 specifying the parameter (weight) starting point. Default is 
+#'                    \code{NULL} which means the function employs random standard uniform values.
+#' @return            The computed final parameter (weight) as a vector of length p + 1
+perceptron_learning_algorithm = function(Xinput, y_binary, MAX_ITER = 1000, w = NULL){
+  if (is.null(w)){
+    w = runif(ncol(Xinput)) #intialize a p+1-dim vector with random values  
+  }
+  for (iter in 1 : MAX_ITER){  
+    for (i in 1 : nrow(Xinput)){
+      x_i = Xinput[i, ]
+      yhat_i = ifelse(x_i %*% w > 0, 1, 0)
+      w = w + as.numeric(y_binary[i] - yhat_i) * x_i
+    }
+  }
+  w
+}
+
+```
+
+Run the code on the simple dataset above via:
+
+```{r}
+w_vec_simple_per = perceptron_learning_algorithm(
+  cbind(1, Xy_simple$first_feature, Xy_simple$second_feature),
+  as.numeric(Xy_simple$response == 1))
+w_vec_simple_per
+```
+
+Use the ggplot code to plot the data and the perceptron's $g$ function.
+
+```{r}
+pacman::p_load(ggplot2)
+simple_viz_obj = ggplot(Xy_simple, aes(x = first_feature, y = second_feature, color = response)) + 
+  geom_point(size = 5)
+simple_perceptron_line = geom_abline(
+    intercept = -w_vec_simple_per[1] / w_vec_simple_per[3], 
+    slope = -w_vec_simple_per[2] / w_vec_simple_per[3], 
+    color = "orange")
+simple_viz_obj + simple_perceptron_line
+```
+
+Why is this line of separation not "satisfying" to you?
+
+TO-DO
+
+It could be separated better maybe cut across in the diagonal more efficiently.
+
+
+2. Use the `e1071` package to fit an SVM model to `y_binary` using the predictors found in `X_simple_feature_matrix`. Do not specify lambda 
+
+```{r}
+pacman::p_load(e1071)
+n = nrow(X_simple_feature_matrix)
+svm_model = svm(X_simple_feature_matrix, Xy_simple$response, kernel = "linear",  scale = FALSE)
+```
+
+and then use the following code to visualize the line in purple:
+
+```{r}
+w_vec_simple_svm = c(
+  svm_model$rho, #the b term
+  -t(svm_model$coefs) %*% X_simple_feature_matrix[svm_model$index, ] # the other terms
+)
+simple_svm_line = geom_abline(
+    intercept = -w_vec_simple_svm[1] / w_vec_simple_svm[3], 
+    slope = -w_vec_simple_svm[2] / w_vec_simple_svm[3], 
+    color = "purple")
+simple_viz_obj + simple_perceptron_line + simple_svm_line
+```
+
+Is this SVM line a better fit than the perceptron?
+
+It seems to be a better fit based on how the svm separated it more naturally but again, the data we have is linerally separable. The svm finds the best fit based on lambda with wedge size and least number of errors--hinge-loss. 
+
+TO-DO
+
+3. Now write pseuocode for your own implementation of the linear support vector machine algorithm respecting the following spec making use of the nelder mead `optim` function from lecture 5p. It turns out you do not need to load the package `neldermead` to use this function. You can feel free to define a function within this function if you wish. 
+
+Note there are differences between this spec and the perceptron learning algorithm spec in question \#1. You should figure out a way to respect the `MAX_ITER` argument value. 
+
+a loop the will compute the two nearest such that the length of w is minimized. To find w divide by 2 which will also give the upper and lower bands.
+the cost function to optimize  is the hinge loss plus the norm of w squared times lambda.
+we will start at a random point since we will rectify it later.
+
+For extra credit, write the actual code.
+
+```{r}
+#' This function implements the hinge-loss linear support vector machine algorithm of Vladimir Vapnik (1963).
+#'
+#' @param Xinput      The training data features as an n x p matrix.
+#' @param y_binary    The training data responses as a vector of length n consisting of only 0's and 1's.
+#' @param MAX_ITER    The maximum number of iterations the algorithm performs. Defaults to 5000.
+#' @param lambda      A scalar hyperparameter trading off margin of the hyperplane versus average hinge loss.
+#'                    The default value is 1.
+#' @return            The computed final parameter (weight) as a vector of length p + 1
+
+linear_svm_learning_algorithm = function(Xinput, y_binary, MAX_ITER = 5000, lambda = 1){
+
+}
+```
+
+
+If you wrote code (the extra credit), run your function using the defaults and plot it in brown vis-a-vis the previous model's line:
+
+```{r}
+#svm_model_weights = linear_svm_learning_algorithm(X_simple_feature_matrix, y_binary)
+#my_svm_line = geom_abline(
+#    intercept = svm_model_weights[1] / svm_model_weights[3],#NOTE: negative sign removed from #intercept argument here
+#    slope = -svm_model_weights[2] / svm_model_weights[3], 
+#    color = "brown")
+#simple_viz_obj  + my_svm_line
+```
+
+Is this the same as what the `e1071` implementation returned? Why or why not?
+
+4. Write a $k=1$ nearest neighbor algorithm using the Euclidean distance function. Respect the spec below:
+
+```{r}
+#' This function implements the nearest neighbor algorithm.
+#'
+#' @param Xinput      The training data features as an n x p matrix.
+#' @param y_binary    The training data responses as a vector of length n consisting of only 0's and 1's.
+#' @param Xtest       The test data that the algorithm will predict on as a n* x p matrix.
+#' @return            The predictions as a n* length vector.
+nn_algorithm_predict = function(Xinput, y_binary, Xtest){
+  vec=rep(NA,nrow(Xtest))
+  best_sqd_distance = Inf 
+  i_star = NA
+    for (i in 1 : nrow(Xtest) ){
+      for(index in 1:nrow(Xinput)){
+         dsqd = sum((Xinput[index,] - Xtest[i,])^2)
+         if (dsqd < best_sqd_distance){
+        best_sqd_distance = dsqd
+        i_star = index
+        vec[i]=y_binary[i_star]
+         }
+      }
+    best_sqd_distance=Inf
+    }
+  vec
+}
+```
+
+Write a few tests to ensure it actually works:
+
+```{r}
+expect_equal(nn_algorithm_predict(X_simple_feature_matrix, as.numeric(Xy_simple$response == 1) , X_simple_feature_matrix),y_binary)
+```
+
+For extra credit, add an argument `k` to the `nn_algorithm_predict` function and update the implementation so it performs KNN. In the case of a tie, choose $\hat{y}$ randomly. Set the default `k` to be the square root of the size of $\mathcal{D}$ which is an empirical rule-of-thumb popularized by the "Pattern Classification" book by Duda, Hart and Stork (2007). Also, alter the documentation in the appropriate places.
+
+```{r}
+#not required TO-DO --- only for extra credit
+```
+
+For extra credit, in addition to the argument `k`, add an argument `d` representing any legal distance function to the `nn_algorithm_predict` function. Update the implementation so it performs KNN using that distance function. Set the default function to be the Euclidean distance in the original function. Also, alter the documentation in the appropriate places.
+
+```{r}
+#not required TO-DO --- only for extra credit
+```
+
+
+5. We move on to simple linear modeling using the ordinary least squares algorithm.
+
+Let's quickly recreate the sample data set from practice lecture 7:
+
+```{r}
+n = 20
+x = runif(n)
+beta_0 = 3
+beta_1 = -2
+y = beta_0 + beta_1 * x + rnorm(n, mean = 0, sd = 0.33)
+```
+
+Solve for the least squares line by computing $b_0$ and $b_1$ _without_ using the functions `cor`, `cov`, `var`, `sd` but instead computing it from the $x$ and $y$ quantities manually. See the class notes.
+
+```{r}
+y_b=sum(y)/length(y)
+x_b=sum(x)/length(x)
+sum_xy=sum(x*y)
+n_yx=n*y_b*x_b
+x_sqr=sum(x*x)
+n_x=n*(x_b^2)
+b_1=(sum_xy-n_yx)/(x_sqr-n_x)
+b_0=y_b-b_1*x_b
+```
+
+Verify your computations are correct using the `lm` function in R:
+
+```{r}
+lm_mod = lm(y~x)
+b_vec = coef(lm_mod)
+expect_equal(b_0, as.numeric(b_vec[1]), tol = 1e-4)
+expect_equal(b_1, as.numeric(b_vec[2]), tol = 1e-4)
+```
+
+6. We are now going to repeat one of the first linear model building exercises in history --- that of Sir Francis Galton in 1886. First load up package `HistData`.
+
+```{r}
+pacman::p_load(HistData)
+```
+
+In it, there is a dataset called `Galton`. Load it using the `data` command:
+
+```{r}
+data("Galton")
+```
+
+You now should have a data frame in your workspace called `Galton`. Summarize this data frame and write a few sentences about what you see. Make sure you report $n$, $p$ and a bit about what the columns represent and how the data was measured. See the help file `?Galton`.
+
+Summary: n which is the number of observations is 928 and p, the number of characteristics is two. For each observation we observe one column for the height of the mid-parent and another column for the height of the child. The data is measured in intervals of width 1 inch. The female children's height were weighted for sex differences. The average parent height was 68.31 inches and the average child height was 68.09 inches. The range is 64 inches to 73 inches for parents and 61.70 inches to 73.70 inches for children 
+
+```{r}
+summary(Galton)
+```
+
+TO-DO
+
+Find the average height (include both parents and children in this computation).
+
+```{r}
+avg_height={ sum(c(Galton$parent)+c(Galton$child))/928/2}
+```
+
+Note that in Math 241 you learned that the sample average is an estimate of the "mean", the population expected value of height. We will call the average the "mean" going forward since it is probably correct to the nearest tenth of an inch with this amount of data.
+
+Run a linear model attempting to explain the childrens' height using the parents' height. Use `lm` and use the R formula notation. Compute and report $b_0$, $b_1$, RMSE and $R^2$. Use the correct units to report these quantities.
+
+```{r}
+
+y=Galton$child
+x=Galton$parent
+
+Lmod=lm(y~x)
+
+r = cor(x, y)
+s_x = sd(x)
+s_y = sd(y)
+y_bar = mean(y)
+x_bar = mean(x)
+
+b_1 = r * s_y / s_x
+b_0 = y_bar - b_1 * x_bar
+b_0
+b_1
+
+
+y_hat=b_0+b_1*x
+resid=y-y_hat
+sse = sum(resid^2)
+mse = sse / length(y)
+rmse = sqrt(mse)
+rmse
+
+rsq = ((s_y^2) - sd(resid)^2) / s_y^2
+rsq
+Rsqr=(s_y^2-2.519301)/s_y^2
+Rsqr
+```
+
+Interpret all four quantities: $b_0$, $b_1$, RMSE and $R^2$.
+
+$b_0$ is the intercept of the line it is in childs, units are inches
+$b_1$ is slope of the line child over parent
+RMSE is 95% predicitive errors plus/minus 2*rmse= 4.472,   units are inches
+$R^2$ is the percent of the varaince of the child height explained by the parent. i.e 60% of the child
+
+How good is this model? How well does it predict? Discuss.
+
+The model is not very good since it cannot explain all the variantions in a childs height based on their parents.
+Because rmse is only 2.23 our range of is roughly 9 inches so our predictions will probably be off from the real value.
+
+
+Now use the code from practice lecture 8 to plot the data and a best fit line using package `ggplot2`. Don't forget to load the library.
+
+```{r}
+pacman::p_load(ggplot2)
+simple_df = data.frame(x = x, y = y)
+simple_viz_obj = ggplot(simple_df, aes(x, y)) + 
+  coord_equal(ratio = 1)+
+  geom_point(size = 1)
+simple_viz_obj
+simple_ls_regression_line = geom_abline(intercept = b_0, slope = b_1, color = "red")
+simple_viz_obj + simple_ls_regression_line
+
+```
+
+It is reasonable to assume that parents and their children have the same height. Explain why this is reasonable using basic biology.
+
+yes because we inherit are genes from our parents so we only have the potential to reach the  height that our genes allow us.
+
+
+If they were to have the same height and any differences were just random noise with expectation 0, what would the values of $\beta_0$ and $\beta_1$ be?
+$\beta_0$=0
+$\beta_1$=1
+
+Let's plot (a) the data in $\mathbb{D}$ as black dots, (b) your least squares line defined by $b_0$ and $b_1$ in blue, (c) the theoretical line $\beta_0$ and $\beta_1$ if the parent-child height equality held in red and (d) the mean height in green.
+
+```{r}
+ggplot(Galton, aes(x = parent, y = child)) + 
+  geom_point() + 
+  geom_jitter() +
+  geom_abline(intercept = b_0, slope = b_1, color = "blue", size = 1) +
+  geom_abline(intercept = 0, slope = 1, color = "red", size = 1) +
+  geom_abline(intercept = avg_height, slope = 0, color = "darkgreen", size = 1) +
+  xlim(63.5, 72.5) + 
+  ylim(63.5, 72.5) +
+  coord_equal(ratio = 1)
+```
+
+Fill in the following sentence: 
+
+Children of short parents became taller on average and children of tall parents became shorter on average.
+
+Why did Galton call it "Regression towards mediocrity in hereditary stature" which was later shortened to "regression to the mean"?
+
+We expect that most people would be around the mean rather than fridges, imples that if the parents are small the child will be taller hence closer to the mean and vice versa.
+
+Why should this effect be real?
+
+Due to the fact that the gene's have a range, on average we expect that the child will be closer to the mean.
+
+You now have unlocked the mystery. Why is it that when modeling with $y$ continuous, everyone calls it "regression"? Write a better, more descriptive and appropriate name for building predictive models with $y$ continuous.
+
+1. The effects on continuous variables due to entropy.
+2. The tendencies to move towrds the mean.
+
