@@ -1,0 +1,265 @@
+---
+title: "Lecture 16 MATH 390.4 Queens College"
+author: "Professor Adam Kapelner"
+date: "April 9, 2018"
+---
+
+# Linear Models with Interaction Terms
+
+Let's take a look at some data about diamonds
+
+```{r}
+pacman::p_load(ggplot2)
+data(diamonds) #from the ggplot2 package
+?diamonds
+str(diamonds)
+summary(diamonds)
+```
+
+The natural response is price:
+
+```{r}
+ggplot(diamonds) + geom_histogram(aes(price), binwidth = 200)
+mean(diamonds$price)
+sd(diamonds$price)
+```
+
+
+A natural increasing relationship will likely be found between weight and price. Let's see it visually:
+
+```{r}
+base = ggplot(diamonds, aes(x = carat, y = price))
+base + geom_point()
+```
+
+Let's see a best guess linear relationship:
+
+```{r}
+mod = lm(price ~ carat, diamonds)
+b = coef(mod)
+summary(mod)$r.squared
+summary(mod)$sigma
+base + geom_point() + geom_abline(intercept = b[1], slope = b[2], col = "green")
+```
+
+Let us add a third variable to this plot, color, a metric about the "yellowness" of the diamond. This is an ordinal categorical variable ranging from D (most clear i.e. best) to J (most yellow in this dataset i.e. worst).
+
+
+```{r}
+base +
+  geom_point(aes(col = color)) + scale_color_brewer(type = "div")
+```
+
+We can look at this with faceting too:
+
+```{r}
+base +
+  geom_point() +
+  facet_wrap(~ color, ncol = 3)
+```
+
+
+What do we see here? It looks like the slope of the price vs. carat linear model is affected by color. For instance, the "D" color diamonds' price increases much faster as weight increases than the "E" color diamonds' price increases in weight, etc. Why do you think this is?
+
+We can picture two of these linear models below by fitting two submodels, one for D and one for J:
+
+```{r}
+mod_D = lm(price ~ carat, subset(diamonds, color == "D"))
+b_D = coef(mod_D)
+mod_J = lm(price ~ carat, subset(diamonds, color == "J"))
+b_J = coef(mod_J)
+
+base +
+  geom_point(aes(col = color)) + scale_color_brewer(type = "div") +
+  geom_abline(intercept = b_D[1], slope = b_D[2]) +
+  geom_abline(intercept = b_J[1], slope = b_J[2])
+```
+
+This indicates a separate intercept and carat-slope for each color. How is this done? Interacting carat and slope:
+
+```{r}
+diamonds$color = factor(as.character(diamonds$color)) #I don't know why I needed to do this...
+mod = lm(price ~ carat * color, diamonds)
+coef(mod)
+summary(mod)$r.squared
+summary(mod)$sigma
+```
+
+The reference category is color D. This means every other color should start lower and have a lower slope. This is about what we see above.
+
+Let's fit a model with just one slope and differential intercepts:
+
+```{r}
+mod = lm(price ~ carat + color, diamonds)
+coef(mod)
+summary(mod)$r.squared
+summary(mod)$sigma
+```
+
+Lesson: allowing for this interaction is a small improvement, but an improvement nevertheless. Note that we do not have the tools to test this improvement and ascertain its statistical significance.
+
+Let's take a look at carat with another variable, depth, a continuous predictor. High depth indicates diamonds are skinny and tall; low depth indicates diamonds are flat like a pancake.
+
+```{r}
+ggplot(diamonds, aes(x = carat, y = price)) +
+  geom_point(aes(col = depth), lwd = 0.5) + scale_colour_gradientn(colours = rainbow(5))
+```
+
+It seems people like flatter diamonds and are willing to pay more per carat. Let's see this in the regression:
+
+```{r}
+mod = lm(price ~ carat * depth, diamonds)
+coef(mod)
+summary(mod)$r.squared
+summary(mod)$sigma
+```
+
+If carat increases by one unit, how much does price increase by?
+
+Is this better than the model without the interaction?
+
+```{r}
+mod = lm(price ~ carat + depth, diamonds)
+summary(mod)$r.squared
+summary(mod)$sigma
+```
+
+Yes this extra degree of freedom seems to be worth it. Note that we do not have the tools to test this improvement and ascertain its statistical significance.
+
+# Model Selection
+
+We have now covered non-linearities (e.g. polynomial terms) and interactions. A new complication now clearly emerges. If I have $p$ predictors, there are many linear least squares models I can build (considering non-linear least squares models makes the space of models even larger!!)
+
+For instance, here are a bunch of models:
+
+```{r}
+mod1 = lm(price ~ carat + depth, diamonds) #using a subset of the features
+mod2 = lm(price ~ ., diamonds) #using a subset of the features
+mod3 = lm(price ~ poly(carat, 2) + poly(depth, 2), diamonds) #using some polynomial terms
+mod4 = lm(price ~ . * ., diamonds) #using all interactions
+coef(mod1)
+coef(mod2)
+coef(mod3)
+coef(mod4)
+```
+
+Which model is "best"? 
+
+This is one of the most fundamental problems in statistics, and possibly all of science! 
+
+In class, we discussed validation via dividing $\mathbb{D}$ into (a) a training set and a (b) testing set. Now, we will further divide the training set into (a) a sub-training set and a (b) selection set and we still have the (c) test set. 
+
+The total training set together will fit a model and testing will estimate future performance. But within the total training set, we'll use an elaborate algorithim: we'll fit many models and take the best one. That's the "master algorithm".
+
+We'll make the selection set and the test set the same size but we don't have to. First split up the data:
+
+```{r}
+n = nrow(diamonds)
+K = 5
+test_indices = sample(1 : n, size = n * 1 / K)
+master_train_indices = setdiff(1 : n, test_indices)
+select_indices = sample(master_train_indices, size = n * 1 / K)
+train_indices = setdiff(master_train_indices, select_indices)
+rm(master_train_indices)
+
+#make sure we did this right:
+pacman::p_load(testthat)
+expect_equal(1 : n, sort(c(train_indices, select_indices, test_indices)))
+
+diamonds_train = diamonds[train_indices, ]
+diamonds_select = diamonds[select_indices, ]
+diamonds_test = diamonds[test_indices, ]
+
+rm(test_indices, select_indices, train_indices)
+```
+
+Now, fit all models and select the best one:
+
+```{r}
+mod1 = lm(price ~ carat + depth, diamonds_train) #using a subset of the features
+mod2 = lm(price ~ ., diamonds_train) #using a subset of the features
+mod3 = lm(price ~ poly(carat, 2) + poly(depth, 2), diamonds_train) #using some polynomial terms
+mod4 = lm(price ~ . * ., diamonds_train) #using all interactions
+```
+
+Now predict on the selection set and look at the oos $s_e$, and select the "best" model
+
+```{r}
+yhat_select_mod1 = predict(mod1, diamonds_select)
+yhat_select_mod2 = predict(mod2, diamonds_select)
+yhat_select_mod3 = predict(mod3, diamonds_select)
+yhat_select_mod4 = predict(mod4, diamonds_select)
+y_select = diamonds_select$price #the true prices
+
+s_e_s = c(
+  sd(yhat_select_mod1 - y_select), 
+  sd(yhat_select_mod2 - y_select), 
+  sd(yhat_select_mod3 - y_select), 
+  sd(yhat_select_mod4 - y_select)
+)
+names(s_e_s) = paste("mod", 1 : 4, sep = "")
+s_e_s
+#find the minimum
+names(which.min(s_e_s))
+```
+
+Which are overfit? Which are underfit? Were these models "poor choices"?
+
+Can we go back and fit some more models? 
+
+Yes - as long as we don't open the "lockbox" of the test set. Let's look at one more model. An expansion of the best of the previous 4 models now with a couple interactions we are convinced are real plus a couple of non-linear terms:
+
+```{r}
+mod5 = lm(price ~ 
+            . + 
+            carat * color + 
+            carat * depth + 
+            I(carat^2) +
+            I(depth^2),
+          diamonds_train) 
+
+yhat_select_mod5 = predict(mod5, diamonds_select)
+
+s_e_s = c(s_e_s, sd(yhat_select_mod5 - y_select))
+names(s_e_s)[5] = "mod5"
+s_e_s
+#find the minimum
+names(which.min(s_e_s))
+```
+
+We can go further and fit more and more models but we should always be careful that we don't fit too many as we may optimize to the selection set. Here, we are lucky since the selection set is large (~11,000 observations) so this is not too much of a fear.
+
+If we had more time in class, we would investigate how we can build better models by looking at the regressions controlled for all other variables. It is an art! 
+
+But you can see the problem - how can we build a good model??
+
+The answer to this is non-parametric regression. But first, we will cover two other important topics before we get there.
+
+Let us return and complete the exercise by now declaring we are done modeling and we are going to ship model 5. Let us get a conservative estimate of its performance:
+
+```{r}
+yhat_test_mod5 = predict(mod5, diamonds_test)
+y_test = diamonds_test$price #the true prices
+sd(yhat_test_mod5 - y_test)
+```
+
+About the same as the selection estimate --- we did not overfit too much to the selection set.
+
+At this point the lockbox is open and we can never return (if we are honest, of course - many people in this business lie so beware).
+
+Now we can build production model 5 with all data to ship:
+
+```{r}
+mod_final = lm(price ~ 
+            . + 
+            carat * color + 
+            carat * depth + 
+            I(carat^2) +
+            I(depth^2),
+          diamonds)
+```
+
+No evaluation is done on the final model. It is only used to predict future diamonds' prices.
+
+
+

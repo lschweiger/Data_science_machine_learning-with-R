@@ -1,0 +1,41 @@
+---
+title: "Lecture 10 MATH 390.4 Queens College"
+author: "Professor Adam Kapelner"
+date: "March 7, 2018"
+---
+
+## Correlation and Covariance
+
+Let's load up the Boston Housing data again.
+
+```{r}
+boston = MASS::Boston
+str(boston)
+```
+
+Let us take a look at some covariances and correlations with the response, the median home value.
+
+```{r}
+pacman::p_load(ggplot2)
+cov(boston$rm, boston$medv)
+cor(boston$rm, boston$medv)
+ggplot(boston, aes(rm, medv)) + 
+  geom_point() + 
+  geom_smooth(method = 'lm')
+cov(boston$indus, boston$medv)
+cor(boston$indus, boston$medv)
+ggplot(boston, aes(indus, medv)) + 
+  geom_point() + 
+  geom_smooth(method = 'lm')
+```
+
+Ever wonder why it's called $R^2$?
+
+```{r}
+summary(lm(medv ~ rm, boston))$r.squared
+cor(boston$rm, boston$medv)^2
+summary(lm(medv ~ indus, boston))$r.squared
+cor(boston$indus, boston$medv)^2
+```
+
+Why should this be?? Homework problem...
